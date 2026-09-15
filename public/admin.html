@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard – Questionnaire</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="page-wrap">
+
+    <!-- Login panel -->
+    <div id="login-panel" class="center-wrap hidden">
+      <div class="card login-card">
+        <h1>🔐 Admin Login</h1>
+        <form id="login-form" novalidate>
+          <div class="field">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" placeholder="Enter admin password" required autocomplete="current-password" />
+          </div>
+          <div id="login-error" class="error-banner hidden" role="alert"></div>
+          <button type="submit" class="btn btn-primary" id="login-btn">
+            Sign In <span class="spinner hidden" aria-hidden="true"></span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Dashboard panel -->
+    <div id="dashboard-panel" class="hidden">
+      <header class="site-header dashboard-header">
+        <div>
+          <h1>📋 Submissions Dashboard</h1>
+          <p class="subtitle" id="result-count"></p>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="logout-btn">Log out</button>
+      </header>
+
+      <main>
+        <div class="toolbar">
+          <input
+            type="search"
+            id="search-input"
+            placeholder="🔍 Search by name or email…"
+            aria-label="Search submissions by name or email"
+          />
+          <button class="btn btn-ghost btn-sm" id="refresh-btn" title="Refresh">↻ Refresh</button>
+        </div>
+
+        <div class="table-wrap" role="region" aria-label="Submissions table">
+          <table id="responses-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Contact Address</th>
+                <th>Age</th>
+                <th>Fan?</th>
+                <th>Interested?</th>
+                <th>Ideal Partner?</th>
+                <th class="sortable sorted-desc" data-col="submitted_at" tabindex="0" role="button" aria-sort="descending">
+                  Submitted ↓
+                </th>
+              </tr>
+            </thead>
+            <tbody id="responses-body">
+              <!-- Rows injected by JS -->
+            </tbody>
+          </table>
+          <div id="empty-state" class="empty-state hidden">No submissions found.</div>
+          <div id="loading-state" class="empty-state">Loading…</div>
+        </div>
+      </main>
+
+      <footer class="site-footer">
+        <p>© 2026 Matchmaking HQ · <a href="/">Public Form</a></p>
+      </footer>
+    </div>
+
+  </div><!-- .page-wrap -->
+
+  <script>
+    // -----------------------------------------------------------------------
+    // State
+    // -----------------------------------------------------------------------
+    let allRows = [];
+    let searchTerm = '';
+    let debounceTimer;
+
+    // -----------------------------------------------------------------------
+    // DOM refs
+    // -----------------------------------------------------------------------
+    const loginPanel     = document.getElementById('login-panel');
+    const dashboardPanel = document.getElementById('dashboard-panel');
+    const loginForm      = document.getElementById('login-form');
+    const loginError     = document.getElementById('login-error');
+    const loginBtn       = document.getElementById('login-btn');
+    const loginSpinner   = loginBtn.querySelector('.spinner');
+    const logoutBtn      = document.getElementById('logout-btn');
+    const searchInput    = document.getElementById('search-input');
+    const tbody          = document.getElementById('responses-body');
+    const emptyState     = document.getElementById('empty-state');
+    const loadingState   = document.getElementById('loading-state');
+    const resultCount    = document.getElementById('result-count');
+    const refreshBtn     = document.getElementById('refresh-btn');
+
+    // -----------------------------------------------------------------------
+    // Utilities
+    // -----------------------------------------------------------------------
+    function escHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    function formatDate(iso) {
+      if (!iso) return '—';
+      try {
+        return new Date(iso + 'Z').toLocaleString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        });
+      } catch { return iso; }
+    }
+
+    function truncate(str, n = 80) {
+      if (!str) return '<span class="muted">—</span>';
+      return str.length > n
+        ? `<span title="${escHtml(str)}">${escHtml(str.slice(0, n))}…</span>`
+        : escHtml(str);
+    }
+
+    // -----------------------------------------------------------------------
+    // Render table
+    // -----------------------------------------------------------------------
+    function renderTable(rows) {
+      loadingState.classList.add('hidden');
+
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        resultCount.textContent = 'No submissions found.';
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      resultCount.textContent = `${rows.length} submission${rows.length === 1 ? '' : 's'}`;
+
+      tbody.innerHTML = rows.map((r, i) => `
+        <tr>
+          <td class="muted">${i + 1}</td>
+          <td><strong>${escHtml(r.name)}</strong></td>
+          <td><a href="mailto:${escHtml(r.email)}">${escHtml(r.email)}</a></td>
+          <td>${escHtml(r.contact_address)}</td>
+          <td>${escHtml(r.age)}</td>
+          <td class="answer-cell">${truncate(r.fan_answer)}</td>
+          <td class="answer-cell">${truncate(r.wife_answer)}</td>
+          <td class="answer-cell">${truncate(r.ideal_answer)}</td>
+          <td class="date-cell muted">${formatDate(r.submitted_at)}</td>
+        </tr>
+      `).join('');
+    }
+
+    // -----------------------------------------------------------------------
+    // Fetch responses from API
+    // -----------------------------------------------------------------------
+    async function fetchResponses(q = '') {
+      loadingState.classList.remove('hidden');
+      emptyState.classList.add('hidden');
+      tbody.innerHTML = '';
+      resultCount.textContent = '';
+
+      const url = q ? `/api/admin/responses?q=${encodeURIComponent(q)}` : '/api/admin/responses';
+      try {
+        const res  = await fetch(url);
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        allRows = data.responses || [];
+        renderTable(allRows);
+      } catch {
+        loadingState.textContent = 'Failed to load data. Please refresh.';
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Auth
+    // -----------------------------------------------------------------------
+    function showLogin() {
+      loginPanel.classList.remove('hidden');
+      dashboardPanel.classList.add('hidden');
+    }
+
+    function showDashboard() {
+      loginPanel.classList.add('hidden');
+      dashboardPanel.classList.remove('hidden');
+      fetchResponses();
+    }
+
+    // Check login state on load
+    (async () => {
+      try {
+        const res  = await fetch('/api/admin/me');
+        const data = await res.json();
+        if (data.loggedIn) showDashboard();
+        else showLogin();
+      } catch { showLogin(); }
+    })();
+
+    // Login form submit
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loginError.classList.add('hidden');
+      loginBtn.disabled = true;
+      loginSpinner.classList.remove('hidden');
+
+      const password = document.getElementById('password').value;
+      try {
+        const res  = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ password }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showDashboard();
+          loginForm.reset();
+        } else {
+          loginError.textContent = data.error || 'Login failed.';
+          loginError.classList.remove('hidden');
+        }
+      } catch {
+        loginError.textContent = 'Network error. Please try again.';
+        loginError.classList.remove('hidden');
+      } finally {
+        loginBtn.disabled = false;
+        loginSpinner.classList.add('hidden');
+      }
+    });
+
+    // Logout
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/api/admin/logout', { method: 'POST' });
+      showLogin();
+    });
+
+    // Search (debounced 300 ms)
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        searchTerm = searchInput.value.trim();
+        fetchResponses(searchTerm);
+      }, 300);
+    });
+
+    // Refresh button
+    refreshBtn.addEventListener('click', () => fetchResponses(searchTerm));
+  </script>
+</body>
+</html>

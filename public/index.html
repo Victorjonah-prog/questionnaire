@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Matchmaking Questionnaire</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="page-wrap">
+    <header class="site-header">
+      <h1>💌 Matchmaking Questionnaire</h1>
+      <p class="subtitle">Fill out the form below and we'll be in touch!</p>
+    </header>
+
+    <main>
+      <!-- Form -->
+      <form id="questionnaire-form" class="card" novalidate>
+        <div class="field">
+          <label for="name">Full Name <span class="required">*</span></label>
+          <input type="text" id="name" name="name" placeholder="Your full name" required autocomplete="name" />
+          <span class="field-error" id="err-name"></span>
+        </div>
+
+        <div class="field">
+          <label for="email">Email Address <span class="required">*</span></label>
+          <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email" />
+          <span class="field-error" id="err-email"></span>
+        </div>
+
+           <div class="field">
+          <label for="contact_address">Contact Address <span class="required">*</span></label>
+          <input type="text" id="contact_address" name="contact_address" placeholder="Your contact address" required />
+          <span class="field-error" id="err-contact_address"></span>
+        </div>
+
+        <div class="field">
+          <label for="age">Age <span class="required">*</span></label>
+          <input type="number" id="age" name="age" placeholder="Your age" min="1" max="120" required />
+          <span class="field-error" id="err-age"></span>
+        </div>
+
+        <div class="field">
+          <label for="fan_answer">Are you a ceedee lamb fan? <span class="required">*</span></label>
+          <textarea id="fan_answer" name="fan_answer" rows="3" placeholder="Tell us what you think…"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="wife_answer">Are you interested in becoming he's partner?</label>
+          <textarea id="wife_answer" name="wife_answer" rows="3" placeholder="Share your thoughts…"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="ideal_answer">What qualities do you think make an ideal partner?</label>
+          <textarea id="ideal_answer" name="ideal_answer" rows="4" placeholder="Describe your ideal match…"></textarea>
+        </div>
+
+        <div id="form-error-banner" class="error-banner hidden" role="alert"></div>
+
+        <button type="submit" class="btn btn-primary" id="submit-btn">
+          Submit <span class="spinner hidden" aria-hidden="true"></span>
+        </button>
+      </form>
+
+      <!-- Thank-you message (hidden until submission) -->
+      <div id="thank-you" class="card thank-you hidden" role="status" aria-live="polite">
+        <div class="check-icon" aria-hidden="true">✅</div>
+        <h2>Thank you!</h2>
+        <p>Your response has been received. We'll be in touch soon.</p>
+        <button class="btn btn-secondary" id="submit-another-btn">Submit another response</button>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <p>© 2026 Matchmaking HQ · <a href="/admin.html">Admin</a></p>
+    </footer>
+  </div>
+
+  <script>
+    const form    = document.getElementById('questionnaire-form');
+    const thankYou = document.getElementById('thank-you');
+    const submitBtn = document.getElementById('submit-btn');
+    const spinner   = submitBtn.querySelector('.spinner');
+    const errorBanner = document.getElementById('form-error-banner');
+    const anotherBtn  = document.getElementById('submit-another-btn');
+
+    function showError(id, msg) {
+      const el = document.getElementById('err-' + id);
+      if (el) { el.textContent = msg; el.style.display = msg ? 'block' : 'none'; }
+    }
+
+    function clearErrors() {
+      ['name','email','contact_address','age'].forEach(f => showError(f, ''));
+      errorBanner.textContent = '';
+      errorBanner.classList.add('hidden');
+    }
+
+    function validateLocally() {
+      let valid = true;
+      const name            = form.name.value.trim();
+      const email           = form.email.value.trim();
+      const contact_address = form.contact_address.value.trim();
+      const age             = parseInt(form.age.value, 10);
+
+      if (!name) { showError('name', 'Please enter your name.'); valid = false; }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showError('email', 'Please enter a valid email address.'); valid = false;
+      }
+      if (!contact_address) { showError('contact_address', 'Please enter your contact address.'); valid = false; }
+      if (!form.age.value || isNaN(age) || age < 1 || age > 120) {
+        showError('age', 'Please enter a valid age between 1 and 120.'); valid = false;
+      }
+      return valid;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearErrors();
+      if (!validateLocally()) return;
+
+      // Disable button + show spinner
+      submitBtn.disabled = true;
+      spinner.classList.remove('hidden');
+
+      const body = new URLSearchParams({
+        name:            form.name.value.trim(),
+        email:           form.email.value.trim(),
+        contact_address: form.contact_address.value.trim(),
+        age:             form.age.value.trim(),
+        fan_answer:      form.fan_answer.value.trim(),
+        wife_answer:     form.wife_answer.value.trim(),
+        ideal_answer:    form.ideal_answer.value.trim(),
+      });
+
+      try {
+        const res  = await fetch('/api/submit', { method: 'POST', body });
+        const data = await res.json();
+
+        if (data.ok) {
+          form.classList.add('hidden');
+          thankYou.classList.remove('hidden');
+        } else {
+          const msgs = (data.errors || ['Something went wrong. Please try again.']).join(' ');
+          errorBanner.textContent = msgs;
+          errorBanner.classList.remove('hidden');
+        }
+      } catch {
+        errorBanner.textContent = 'Network error. Please check your connection and try again.';
+        errorBanner.classList.remove('hidden');
+      } finally {
+        submitBtn.disabled = false;
+        spinner.classList.add('hidden');
+      }
+    });
+
+    anotherBtn.addEventListener('click', () => {
+      form.reset();
+      clearErrors();
+      thankYou.classList.add('hidden');
+      form.classList.remove('hidden');
+    });
+  </script>
+</body>
+</html>

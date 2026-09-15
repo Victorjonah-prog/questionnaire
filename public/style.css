@@ -1,0 +1,322 @@
+/* ============================================================
+   Global reset & base
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --clr-bg:        #f4f6fb;
+  --clr-surface:   #ffffff;
+  --clr-border:    #dde1ea;
+  --clr-text:      #1a1d23;
+  --clr-muted:     #6b7280;
+  --clr-primary:   #4f46e5;
+  --clr-primary-h: #4338ca;
+  --clr-danger:    #dc2626;
+  --clr-success:   #16a34a;
+  --clr-success-bg:#f0fdf4;
+  --radius:        0.75rem;
+  --shadow:        0 1px 4px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+html { font-size: 16px; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font);
+  background: var(--clr-bg);
+  color: var(--clr-text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+a { color: var(--clr-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ============================================================
+   Layout helpers
+   ============================================================ */
+.page-wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.center-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 5vh;
+  min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+/* ============================================================
+   Header / Footer
+   ============================================================ */
+.site-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.site-header h1 {
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 700;
+  color: var(--clr-primary);
+  margin-bottom: .25rem;
+}
+
+.subtitle { color: var(--clr-muted); font-size: .95rem; }
+
+.site-footer {
+  margin-top: 3rem;
+  text-align: center;
+  color: var(--clr-muted);
+  font-size: .85rem;
+}
+
+/* ============================================================
+   Card
+   ============================================================ */
+.card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 2rem;
+}
+
+@media (max-width: 480px) {
+  .card { padding: 1.25rem; }
+}
+
+/* ============================================================
+   Form fields
+   ============================================================ */
+.field { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 1.25rem; }
+
+label {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--clr-text);
+}
+
+.required { color: var(--clr-danger); }
+
+input[type="text"],
+input[type="email"],
+input[type="number"],
+input[type="password"],
+input[type="search"],
+textarea {
+  width: 100%;
+  padding: .6rem .85rem;
+  border: 1.5px solid var(--clr-border);
+  border-radius: .5rem;
+  font-size: .95rem;
+  font-family: var(--font);
+  color: var(--clr-text);
+  background: var(--clr-surface);
+  transition: border-color .15s, box-shadow .15s;
+  outline: none;
+}
+
+input:focus, textarea:focus {
+  border-color: var(--clr-primary);
+  box-shadow: 0 0 0 3px rgba(79,70,229,.15);
+}
+
+textarea { resize: vertical; min-height: 4.5rem; }
+
+.field-error {
+  display: none;
+  font-size: .8rem;
+  color: var(--clr-danger);
+  margin-top: .15rem;
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: .65rem 1.5rem;
+  border-radius: .5rem;
+  font-size: .95rem;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: background .15s, border-color .15s, color .15s;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--clr-primary);
+  color: #fff;
+  width: 100%;
+  margin-top: .5rem;
+}
+.btn-primary:hover:not(:disabled) { background: var(--clr-primary-h); }
+.btn-primary:disabled { opacity: .65; cursor: not-allowed; }
+
+.btn-secondary {
+  background: transparent;
+  border-color: var(--clr-primary);
+  color: var(--clr-primary);
+  width: 100%;
+  margin-top: .5rem;
+}
+.btn-secondary:hover { background: rgba(79,70,229,.07); }
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--clr-border);
+  color: var(--clr-muted);
+}
+.btn-ghost:hover { background: var(--clr-bg); }
+
+.btn-sm { padding: .4rem 1rem; font-size: .85rem; width: auto; }
+
+/* ============================================================
+   Spinner
+   ============================================================ */
+.spinner {
+  display: inline-block;
+  width: 1rem; height: 1rem;
+  border: 2px solid rgba(255,255,255,.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Error / Success banners
+   ============================================================ */
+.error-banner {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: var(--clr-danger);
+  border-radius: .5rem;
+  padding: .65rem .9rem;
+  font-size: .875rem;
+  margin-top: .5rem;
+}
+
+/* ============================================================
+   Thank-you card
+   ============================================================ */
+.thank-you {
+  text-align: center;
+  padding: 3rem 2rem;
+}
+.check-icon { font-size: 3rem; margin-bottom: 1rem; }
+.thank-you h2 { font-size: 1.6rem; margin-bottom: .5rem; color: var(--clr-success); }
+.thank-you p  { color: var(--clr-muted); margin-bottom: 1.5rem; }
+
+/* ============================================================
+   Admin — login card
+   ============================================================ */
+.login-card { width: 100%; max-width: 400px; }
+.login-card h1 { text-align: center; margin-bottom: 1.5rem; font-size: 1.4rem; }
+
+/* ============================================================
+   Admin — dashboard layout (wider page)
+   ============================================================ */
+.page-wrap:has(#dashboard-panel:not(.hidden)) {
+  max-width: 1200px;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  text-align: left;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.toolbar {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.toolbar input[type="search"] { flex: 1; min-width: 200px; }
+
+/* ============================================================
+   Table
+   ============================================================ */
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .875rem;
+}
+
+thead { background: #f8f9fc; }
+
+th, td {
+  padding: .75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--clr-border);
+  vertical-align: top;
+}
+
+th {
+  font-weight: 600;
+  color: var(--clr-muted);
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+tr:last-child td { border-bottom: none; }
+
+tr:hover td { background: #f9faff; }
+
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { color: var(--clr-primary); }
+.sorted-asc::after  { content: ' ↑'; color: var(--clr-primary); }
+.sorted-desc::after { content: ' ↓'; color: var(--clr-primary); }
+
+.answer-cell {
+  max-width: 220px;
+  word-break: break-word;
+  color: var(--clr-muted);
+  font-size: .82rem;
+}
+
+.date-cell { white-space: nowrap; font-size: .8rem; }
+
+.muted { color: var(--clr-muted); }
+
+.empty-state {
+  padding: 3rem;
+  text-align: center;
+  color: var(--clr-muted);
+  font-size: .95rem;
+}
+
+/* ============================================================
+   Responsive tweaks
+   ============================================================ */
+@media (max-width: 600px) {
+  .dashboard-header { flex-direction: column; }
+  .btn-sm { width: 100%; text-align: center; }
+  th, td { padding: .6rem .75rem; }
+}
