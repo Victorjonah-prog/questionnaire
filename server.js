@@ -2,12 +2,11 @@
 
 require('dotenv').config();
 
-const express      = require('express');
+const express       = require('express');
 const cookieSession = require('cookie-session');
-const bcrypt       = require('bcryptjs');
-const initSqlJs    = require('sql.js');
-const path         = require('path');
-const fs           = require('fs');
+const bcrypt        = require('bcryptjs');
+const { Pool }      = require('pg');
+const path          = require('path');
 
 // ---------------------------------------------------------------------------
 // Config & validation
@@ -15,71 +14,30 @@ const fs           = require('fs');
 const PORT           = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SESSION_SECRET = process.env.SESSION_SECRET;
+const DATABASE_URL   = process.env.DATABASE_URL;
 
-if (!ADMIN_PASSWORD) {
-  console.error('ERROR: ADMIN_PASSWORD is not set in .env');
-  process.exit(1);
-}
+if (!ADMIN_PASSWORD) { console.error('ERROR: ADMIN_PASSWORD is not set'); process.exit(1); }
+if (!DATABASE_URL)   { console.error('ERROR: DATABASE_URL is not set');   process.exit(1); }
 if (!SESSION_SECRET || SESSION_SECRET === 'replace-with-a-long-random-secret-string') {
-  console.warn(
-    'WARNING: SESSION_SECRET is not set or uses the default placeholder. ' +
-    'Set a strong random string in .env before deploying.'
-  );
+  console.warn('WARNING: SESSION_SECRET is not set or uses the default placeholder.');
 }
 
 // ---------------------------------------------------------------------------
-// Database helpers — sql.js (pure-JS SQLite, no native compilation)
+// Postgres connection pool
 // ---------------------------------------------------------------------------
-const DATA_DIR = path.join(__dirname, 'data');
-const DB_PATH  = path.join(DATA_DIR, 'responses.db');
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: { rejectUnauthorized: false }, // required for Neon
+});
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-// Persist the in-memory database to disk after every write
-let db; // sql.js Database instance
-
-function saveDb() {
-  const data = db.export(); // Uint8Array
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
-}
-
-// Run a write statement and immediately persist
-function run(sql, params = []) {
-  db.run(sql, params);
-  saveDb();
-}
-
-// Return all rows as array of plain objects
-function all(sql, params = []) {
-  const stmt   = db.prepare(sql);
-  stmt.bind(params);
-  const rows   = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
-}
-
-// Return a single row or undefined
-function get(sql, params = []) {
-  const rows = all(sql, params);
-  return rows[0];
-}
-
-// Boot: initialise sql.js, load or create the database, run migrations
+// ---------------------------------------------------------------------------
+// Database initialisation — create tables and handle password hashing
+// ---------------------------------------------------------------------------
 async function initDb() {
-  const SQL = await initSqlJs();
-
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  // Schema
-  db.run(`
+  // Create tables if they don't exist
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS responses (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      id              SERIAL PRIMARY KEY,
       name            TEXT    NOT NULL,
       email           TEXT    NOT NULL,
       contact_address TEXT    NOT NULL DEFAULT '',
@@ -87,42 +45,34 @@ async function initDb() {
       fan_answer      TEXT    NOT NULL DEFAULT '',
       wife_answer     TEXT    NOT NULL DEFAULT '',
       ideal_answer    TEXT    NOT NULL DEFAULT '',
-      submitted_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
+      submitted_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
-  // Migration: add contact_address column if it doesn't exist yet (for existing DBs)
-  try {
-    db.run(`ALTER TABLE responses ADD COLUMN contact_address TEXT NOT NULL DEFAULT ''`);
-    saveDb();
-  } catch (e) {
-    // Column already exists — ignore
-  }
-
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS admin_config (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
   `);
 
-  // Persist schema if newly created
-  saveDb();
+  // Hash and store the admin password (or refresh if it changed)
+  const result = await pool.query("SELECT value FROM admin_config WHERE key = 'password_hash'");
+  const stored = result.rows[0];
 
-  // ---------------------------------------------------------------------------
-  // Password hashing — read ADMIN_PASSWORD from .env, hash & store once
-  // ---------------------------------------------------------------------------
-  const storedRow = get("SELECT value FROM admin_config WHERE key = 'password_hash'");
-
-  if (!storedRow) {
-    // First run: hash and store
+  if (!stored) {
     const hash = bcrypt.hashSync(ADMIN_PASSWORD, 12);
-    run("INSERT INTO admin_config (key, value) VALUES ('password_hash', ?)", [hash]);
+    await pool.query(
+      "INSERT INTO admin_config (key, value) VALUES ('password_hash', $1)",
+      [hash]
+    );
     console.log('Admin password hashed and stored in database.');
-  } else if (!bcrypt.compareSync(ADMIN_PASSWORD, storedRow.value)) {
-    // .env password was rotated — re-hash and update
+  } else if (!bcrypt.compareSync(ADMIN_PASSWORD, stored.value)) {
     const hash = bcrypt.hashSync(ADMIN_PASSWORD, 12);
-    run("UPDATE admin_config SET value = ? WHERE key = 'password_hash'", [hash]);
+    await pool.query(
+      "UPDATE admin_config SET value = $1 WHERE key = 'password_hash'",
+      [hash]
+    );
     console.log('Admin password updated (hash refreshed).');
   }
 }
@@ -134,9 +84,9 @@ function sanitize(val) {
   return typeof val === 'string' ? val.trim() : '';
 }
 
-function getPasswordHash() {
-  const row = get("SELECT value FROM admin_config WHERE key = 'password_hash'");
-  return row ? row.value : null;
+async function getPasswordHash() {
+  const result = await pool.query("SELECT value FROM admin_config WHERE key = 'password_hash'");
+  return result.rows[0]?.value || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +110,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ---------------------------------------------------------------------------
 // Routes — Questionnaire
 // ---------------------------------------------------------------------------
-app.post('/api/submit', (req, res) => {
+app.post('/api/submit', async (req, res) => {
   const name            = sanitize(req.body.name);
   const email           = sanitize(req.body.email);
   const contact_address = sanitize(req.body.contact_address);
@@ -178,9 +128,9 @@ app.post('/api/submit', (req, res) => {
   if (errors.length > 0) return res.status(400).json({ ok: false, errors });
 
   try {
-    run(
+    await pool.query(
       `INSERT INTO responses (name, email, contact_address, age, fan_answer, wife_answer, ideal_answer)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [name, email, contact_address, age, fan_answer, wife_answer, ideal_answer]
     );
     return res.json({ ok: true });
@@ -193,9 +143,9 @@ app.post('/api/submit', (req, res) => {
 // ---------------------------------------------------------------------------
 // Routes — Admin
 // ---------------------------------------------------------------------------
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
   const password = sanitize(req.body.password);
-  const hash     = getPasswordHash();
+  const hash     = await getPasswordHash();
 
   if (!password || !hash || !bcrypt.compareSync(password, hash)) {
     return res.status(401).json({ ok: false, error: 'Incorrect password.' });
@@ -215,24 +165,31 @@ function requireAdmin(req, res, next) {
   return res.status(401).json({ ok: false, error: 'Unauthorised' });
 }
 
-app.get('/api/admin/responses', requireAdmin, (req, res) => {
-  const q = req.query.q ? `%${req.query.q}%` : null;
+app.get('/api/admin/responses', requireAdmin, async (req, res) => {
+  try {
+    const q = req.query.q ? `%${req.query.q}%` : null;
 
-  const rows = q
-    ? all(
-        'SELECT * FROM responses WHERE name LIKE ? OR email LIKE ? ORDER BY submitted_at DESC',
-        [q, q]
-      )
-    : all('SELECT * FROM responses ORDER BY submitted_at DESC');
+    const result = q
+      ? await pool.query(
+          `SELECT * FROM responses
+           WHERE name ILIKE $1 OR email ILIKE $1
+           ORDER BY submitted_at DESC`,
+          [q]
+        )
+      : await pool.query('SELECT * FROM responses ORDER BY submitted_at DESC');
 
-  return res.json({ ok: true, responses: rows });
+    return res.json({ ok: true, responses: result.rows });
+  } catch (err) {
+    console.error('DB query error:', err);
+    return res.status(500).json({ ok: false, error: 'Failed to fetch responses.' });
+  }
 });
 
 app.get('/api/admin/me', (req, res) => {
   return res.json({ loggedIn: !!(req.session && req.session.admin) });
 });
 
-// Catch-all for client-side routing (non-API GETs)
+// Catch-all for non-API GETs
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
